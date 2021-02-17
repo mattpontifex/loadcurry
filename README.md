@@ -1,7 +1,7 @@
 loadcurry
 ==============
 
-An EEGLAB functions that enables importing of Compumedics Neuroscan Curry data files (versions 6, 7, & 8).
+An EEGLAB functions that enables importing of Compumedics Neuroscan Curry data files (versions 6, 7, 8 & 9).
 
 Installation
 ------------
