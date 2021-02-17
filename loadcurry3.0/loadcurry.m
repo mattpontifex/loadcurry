@@ -1,6 +1,6 @@
 function [EEG, command] = loadcurry(fullfilename, varargin)
-%   Import a Neuroscan Curry file into EEGLAB. Currently supports Curry6,
-%   Curry7, and Curry8 data files (both continuous and epoched). Epoched
+%   Import a Neuroscan Curry file into EEGLAB. Currently supports Curry version 6, 7, 8,
+%   and 9 data files (both continuous and epoched). Epoched
 %   datasets are loaded in as continuous files with boundary events. Data
 %   can be re-epoched using EEGLAB/ERPLAB functions.
 %
@@ -17,10 +17,17 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
 %       1     'CurryLocations' - Boolean parameter to determine if the sensor
 %               locations are carried forward from Curry [1, 'True'] or if the channel
 %               locations from EEGLAB should be used [0, 'False' Default].
+%       2     'KeepTriggerChannel' - Boolean parameter to determine if the trigger channel is retained in the array [1, 'True' Default] or if the trigger channel
+%               should be removed [0, 'False']. I debated adjusting this parameter but given the EEGLAB/ERPLAB
+%               bugs associated with trigger events, this provides a nice
+%               data check. You can always delete the channel or relocate
+%               it later.
 %
 %   Author for reading into Matlab: Neuroscan 
-%   Author for translating to EEGLAB: Matthew B. Pontifex, Health Behaviors and Cognition Laboratory, Michigan State University, August 26, 2015
+%   Author for translating to EEGLAB: Matthew B. Pontifex, Health Behaviors and Cognition Laboratory, Michigan State University, February 17, 2021
+%   Github: https://github.com/mattpontifex/loadcurry
 %
+%   revision 3.0 - Curry9 compatibility.
 %
 %   revision 2.1 - 
 %     Updated to make sure event latencies are in double format.
@@ -63,14 +70,20 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
              r=struct(varargin{:});
         end
         try, r.CurryLocations; catch, r.CurryLocations = 'False'; end
-        try, r.Force; catch, r.Force = 'False'; end
-        try, r.AltFile; catch, r.AltFile = 'False'; end
-        try, r.Debug; catch, r.Debug = 'False'; end
-        try, r.Skip;  skipcodes = [r.Skip];    catch, skipcodes = []; end
-        if strcmpi(r.CurryLocations, 'True') | (r.CurryLocations == 0)
+        try, r.KeepTriggerChannel; catch, r.KeepTriggerChannel = 'True'; end
+        if strcmpi(r.CurryLocations, 'True') | (r.CurryLocations == 1)
             r.CurryLocations = 'True';
+        else
+            r.CurryLocations = 'False';
         end
-
+        if strcmpi(r.KeepTriggerChannel, 'True') | (r.KeepTriggerChannel == 1)
+            r.KeepTriggerChannel = 'True';
+        else
+            r.KeepTriggerChannel = 'False';
+        end
+       
+        
+        
         EEG = [];
         EEG = eeg_emptyset;
         [pathstr,name,ext] = fileparts(fullfilename);
@@ -82,10 +95,16 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
         boolfiles = 1;
         curryvers = 0;
         if strcmpi(ext, '.cdt')
-            curryvers = 8;
-            if (exist([file '.cdt'], 'file') == 0) || (exist([file '.cdt.dpa'], 'file') == 0)
+            curryvers = 9;
+            if (exist([file '.cdt'], 'file') == 0) || ((exist([file '.cdt.dpa'], 'file') == 0) && (exist([file '.cdt.dpo'], 'file') == 0))
                 boolfiles = 0;
-                error('Error in pop_loadcurry(): The requested filename "%s" in "%s" does not have both file components (.cdt, .cdt.dpa) created by Curry 8.', name, filepath)
+                
+                if (exist([file '.cdt'], 'file') == 0)
+                    error('Error in pop_loadcurry(): The requested filename "%s" in "%s" does not have a .cdt file created by Curry 8 and 9.', name, filepath)
+                end
+                if ((exist([file '.cdt.dpa'], 'file') == 0) && (exist([file '.cdt.dpo'], 'file') == 0))
+                    error('Error in pop_loadcurry(): The requested filename "%s" in "%s" does not have a .cdt.dpa/o file created by Curry 8 and 9.', name, filepath)
+                end
             end
         else
             curryvers = 7;
@@ -97,14 +116,17 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
 
         if (boolfiles == 1)
 
-            %% Provided by Neuroscan enclosed within Program Files Folder for Curry7 (likely to be included in Curry8)
-            % Received updated version on 6-19-2016 from Michael Wagner, Ph.D., Senior Scientist, Compumedics Germany GmbH, Heußweg 25, 20255 Hamburg, Germany
+            %% Provided by Neuroscan enclosed within Program Files Folder for Curry7 (likely to be included in Curry8/9)
+            % Received updated version on 2-5-2021 from Michael Wagner, Ph.D., Senior Scientist, Compumedics Germany GmbH, Heußweg 25, 20255 Hamburg, Germany
             % Modified to retain compatibility with earlier versions of Matlab and Older Computers by Pontifex
             
             if (curryvers == 7)
                 datafileextension = '.dap';
-            elseif (curryvers == 8)
+            elseif (curryvers > 7)
                 datafileextension = '.cdt.dpa';
+                if (exist([file '.cdt.dpo'], 'file') == 0)
+                    datafileextension = '.cdt.dpo';
+                end
             end
             
             % Open parameter file
@@ -112,6 +134,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             if (fid == -1)
                error('Error in loadcurry(): Unable to open file.') 
             end
+            
             try
                 cell = textscan(fid,'%s','whitespace','','endofline','§');
             catch
@@ -195,8 +218,11 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             % open file containing labels
             if (curryvers == 7)
                 datafileextension = '.rs3';
-            elseif (curryvers == 8)
+            elseif (curryvers > 7)
                 datafileextension = '.cdt.dpa';
+                if (exist([file '.cdt.dpo'], 'file') == 0)
+                    datafileextension = '.cdt.dpo';
+                end
             end
             
             fid = fopen([file, datafileextension],'rt');
@@ -248,6 +274,26 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                 end 
             end
 
+            %Search for Epoch Labels
+            tixstar = strfind(cont,'EPOCH_LABELS START_LIST');
+            tixstop = strfind(cont,'EPOCH_LABELS END_LIST');
+            epochlabelslist = []; 
+            if (~isempty(tixstar)) && (~isempty(tixstop))
+                text = cont(tixstar:tixstop-1);
+                tcell = textscan(text,'%s', 'delimiter','\n','whitespace','', 'headerlines', 1);
+                epochlabelslist = tcell{1,1};
+            end
+            %Search for Epoch Information
+            tixstar = strfind(cont,'EPOCH_INFORMATION START_LIST');
+            tixstop = strfind(cont,'EPOCH_INFORMATION END_LIST');
+            epochinformationlist = []; 
+            if (~isempty(tixstar)) && (~isempty(tixstop))
+                text = cont(tixstar:tixstop-1);
+                tcell = textscan(text,'%d%d%d%d%d%d%d', 'delimiter','\n','headerlines', 1);
+                epochinformationlist = cell2mat(tcell);
+            end
+            
+            
             % read sensor locations from rs3 file
             % initialize sensor locations
             sensorpos = zeros(3,0);
@@ -286,7 +332,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             if (curryvers == 7)
                 datafileextension = '.cef';
                 datafileextensionalt = '.ceo';
-            elseif (curryvers == 8)
+            elseif (curryvers > 7)
                 datafileextension = '.cdt.cef';
                 datafileextensionalt = '.cdt.ceo';
             end
@@ -362,7 +408,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             % read dat file
             if (curryvers == 7)
                 datafileextension = '.dat';
-            elseif (curryvers == 8)
+            elseif (curryvers > 7)
                 datafileextension = '.cdt';
             end
             
@@ -406,7 +452,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             EEG.setname = 'Neuroscan Curry file';
             if (curryvers == 7)
                 datafileextension = '.dap';
-            elseif (curryvers == 8)
+            elseif (curryvers > 7)
                 datafileextension = '.cdt';
             end
             EEG.filename = [name, datafileextension];
@@ -548,8 +594,10 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             
             % Remove Trigger Channel
             if ~isempty(find(strcmpi(labels,'Trigger')))
-                EEG.data(find(strcmpi(labels,'TRIGGER')),:) = [];
-                EEG.chanlocs(find(strcmpi(labels,'TRIGGER'))) = [];
+                if ~strcmpi(r.KeepTriggerChannel, 'True')
+                    EEG.data(find(strcmpi(labels,'TRIGGER')),:) = [];
+                    EEG.chanlocs(find(strcmpi(labels,'TRIGGER'))) = [];
+                end
             end
             EEG.nbchan = size(EEG.data,1);
 
@@ -568,7 +616,5 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             EEG.history = sprintf('%s\nEEG = eeg_checkset(EEG);', EEG.history);
 
         end
-    end
-   
+    end   
 end
-

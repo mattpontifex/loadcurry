@@ -17,7 +17,8 @@ function [EEG, command] = pop_loadcurry(fullfilename, varargin)
 %   Author for translating to EEGLAB: Matthew B. Pontifex, Health Behaviors and Cognition Laboratory, Michigan State University, February 17, 2021
 %   Github: https://github.com/mattpontifex/loadcurry
 %
-%   revision 3.0 - Curry9 compatibility.
+%   revision 3.0 - Curry9 compatibility. Increased the verbosity of the
+%     equivalent call so that it provides the default parameters.
 %
 %   revision 2.0 - 
 %     Updated for Curry8 compatibility and compatibility with epoched
@@ -65,7 +66,13 @@ function [EEG, command] = pop_loadcurry(fullfilename, varargin)
                 curryvers = 9;
                 if (exist([file '.cdt'], 'file') == 0) || ((exist([file '.cdt.dpa'], 'file') == 0) && (exist([file '.cdt.dpo'], 'file') == 0))
                     boolfiles = 0;
-                    error('Error in pop_loadcurry(): The requested filename "%s" in "%s" does not have both file components (.cdt, .cdt.dpa/o) created by Curry 8 and 9.', name, filepath)
+                    
+                    if (exist([file '.cdt'], 'file') == 0)
+                        error('Error in pop_loadcurry(): The requested filename "%s" in "%s" does not have a .cdt file created by Curry 8 and 9.', name, filepath)
+                    end
+                    if ((exist([file '.cdt.dpa'], 'file') == 0) && (exist([file '.cdt.dpo'], 'file') == 0))
+                        error('Error in pop_loadcurry(): The requested filename "%s" in "%s" does not have a .cdt.dpa/o file created by Curry 8 and 9.', name, filepath)
+                    end
                 end
             else
                 curryvers = 7;
@@ -85,10 +92,10 @@ function [EEG, command] = pop_loadcurry(fullfilename, varargin)
             
             % Show user the direct call equivalent
             if (curryvers > 7)
-                command = sprintf('\nEquivalent Command:\n\tEEG = loadcurry(''%s%s'');',filepath, [name '.cdt']);
+                command = sprintf('\nEquivalent Command:\n\tEEG = loadcurry(''%s%s'', ''KeepTriggerChannel'', ''True'', ''CurryLocations'', ''False'');',filepath, [name '.cdt']);
                 disp(command)
             elseif (curryvers == 7)
-                command = sprintf('\nEquivalent Command:\n\tEEG = loadcurry(''%s%s'');',filepath, [name '.dap']);
+                command = sprintf('\nEquivalent Command:\n\tEEG = loadcurry(''%s%s'', ''KeepTriggerChannel'', ''True'', ''CurryLocations'', ''False'');',filepath, [name '.dap']);
                 disp(command)
             end
         end
