@@ -117,14 +117,14 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
         if (boolfiles == 1)
 
             %% Provided by Neuroscan enclosed within Program Files Folder for Curry7 (likely to be included in Curry8/9)
-            % Received updated version on 2-5-2021 from Michael Wagner, Ph.D., Senior Scientist, Compumedics Germany GmbH, Heußweg 25, 20255 Hamburg, Germany
+            % Received updated version on 2-5-2021 from Michael Wagner, Ph.D., Senior Scientist, Compumedics Germany GmbH, HeuÃŸweg 25, 20255 Hamburg, Germany
             % Modified to retain compatibility with earlier versions of Matlab and Older Computers by Pontifex
             
             if (curryvers == 7)
                 datafileextension = '.dap';
             elseif (curryvers > 7)
                 datafileextension = '.cdt.dpa';
-                if (exist([file '.cdt.dpo'], 'file') == 0)
+                if (exist([file '.cdt.dpo'], 'file') > 0)
                     datafileextension = '.cdt.dpo';
                 end
             end
@@ -136,14 +136,14 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             end
             
             try
-                cell = textscan(fid,'%s','whitespace','','endofline','§');
+                cell = textscan(fid,'%s','whitespace','','endofline','Â§');
             catch
                 % In case of earlier versions of Matlab or Older Computers
                 fclose(fid); 
                 fid = fopen([file, datafileextension],'rt');
                 f = dir([file, datafileextension]);
                 try
-                    cell = textscan(fid,'%s','whitespace','','endofline','§','BufSize',round(f.bytes+(f.bytes*0.2)));
+                    cell = textscan(fid,'%s','whitespace','','endofline','Â§','BufSize',round(f.bytes+(f.bytes*0.2)));
                 catch
                     fclose(fid); 
                     fid = fopen([file, datafileextension],'rt');
@@ -220,7 +220,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                 datafileextension = '.rs3';
             elseif (curryvers > 7)
                 datafileextension = '.cdt.dpa';
-                if (exist([file '.cdt.dpo'], 'file') == 0)
+                if (exist([file '.cdt.dpo'], 'file') > 0)
                     datafileextension = '.cdt.dpo';
                 end
             end
@@ -230,13 +230,13 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                error('Error in loadcurry(): Unable to open file.') 
             end
             try
-                cell = textscan(fid,'%s','whitespace','','endofline','§');
+                cell = textscan(fid,'%s','whitespace','','endofline','Â§');
             catch
                 fclose(fid);
                 fid = fopen([file, datafileextension],'rt');
                 f = dir([file, datafileextension]);
                 try
-                    cell = textscan(fid,'%s','whitespace','','endofline','§','BufSize',round(f.bytes+(f.bytes*0.2)));
+                    cell = textscan(fid,'%s','whitespace','','endofline','Â§','BufSize',round(f.bytes+(f.bytes*0.2)));
                 catch
                     fclose(fid);
                     fid = fopen([file, datafileextension],'rt');
@@ -348,7 +348,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
 
             if fid >= 0                
                 try
-                    cell = textscan(fid,'%s','whitespace','','endofline','§');
+                    cell = textscan(fid,'%s','whitespace','','endofline','Â§');
                 catch
                     fclose(fid);
                     fid = fopen([file, datafileextension],'rt');
@@ -359,7 +359,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                         f = dir([file, datafileextension]);
                     end
                     try
-                        cell = textscan(fid,'%s','whitespace','','endofline','§','BufSize',round(f.bytes+(f.bytes*0.2)));
+                        cell = textscan(fid,'%s','whitespace','','endofline','Â§','BufSize',round(f.bytes+(f.bytes*0.2)));
                     catch
                         fclose(fid);
                         fid = fopen([file, datafileextension],'rt');
