@@ -449,6 +449,22 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
 
             %% Created to take this data and place it into EEGLAB format (v13.4.4b)
             
+            % Handle Epoched Datasets
+            if (nTrials > 1)
+                origdata = data;
+                newdata = NaN(nChannels, nSamples, nTrials);
+                startpoint = 1;
+                stoppoint = startpoint + nSamples - 1;
+                for cC = 1:nTrials
+                    newdata(:,:,cC) = data(:,startpoint:stoppoint);
+                    startpoint = startpoint + nSamples;
+                    stoppoint = startpoint + nSamples - 1;
+                end
+                data = newdata;
+                time = linspace(0,nSamples/fFrequency,nSamples);
+                time = time + (fOffsetUsec/1000000);
+            end
+            
             EEG.setname = 'Neuroscan Curry file';
             if (curryvers == 7)
                 datafileextension = '.dap';
@@ -464,7 +480,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             EEG.srate = fFrequency;
             EEG.times = time;
             EEG.data = double(data);
-            EEG.xmin = 0;
+            EEG.xmin = min(EEG.times);
             EEG.xmax = (EEG.pnts-1)/EEG.srate+EEG.xmin;
             EEG.nbchan = size(EEG.data,1);
             EEG.urchanlocs = [];
@@ -603,8 +619,55 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
 
             % Handle Epoched Datasets
             if (nTrials > 1)
-                % Data has epochs
-                [T, EEG] = evalc('eeg_epoch2continuous(EEG)'); % Force to continous and add boundary events
+                
+                [~, zeropoint] = min(abs(EEG.times));
+                EEG.data = origdata; % restore original data
+                EEG.trials = 1;
+                EEG.pnts = size(EEG.data,2);
+                EEG.xmin = 0;
+                EEG.xmax = (EEG.pnts-1)/EEG.srate+EEG.xmin;
+                EEG.times = linspace(EEG.xmin,EEG.xmax,EEG.pnts);
+                trigchannel = zeros(1, EEG.pnts);
+                
+                % put markers in (Curry does not appear to have a trigger
+                % channel for epoched datasets)
+                tempevent = struct('type', [], 'latency', [], 'urevent', [], 'label', []);
+                startpoint = 1;
+                currentline = 1;
+                for cC = 1:nTrials
+                    
+                    % See if there are actual event information to add
+                    if size(epochinformationlist,1) > 0
+
+                        % put markers in (Curry does not appear to have a trigger
+                        % channel for epoched datasets)
+                        
+                        tempevent(currentline).label = epochlabelslist{cC,1};
+                        tempevent(currentline).urevent = cC;
+                        tempevent(currentline).type = epochinformationlist(cC,3);
+                        tempevent(currentline).latency = startpoint+zeropoint-1;
+                        trigchannel(startpoint+zeropoint-1) = epochinformationlist(cC,3);
+                        
+                        currentline = currentline + 1;
+                    end
+                    
+                    if (cC < nTrials)
+                        % place boundary event at the end
+                        tempevent(currentline).type = 'boundary';
+                        tempevent(currentline).latency = startpoint+nSamples-1;
+
+                        currentline = currentline + 1;
+                    end
+                    startpoint = startpoint + nSamples;
+                end
+                EEG.event = tempevent; 
+                
+                if strcmpi(r.KeepTriggerChannel, 'True')
+                    if (sum(trigchannel) > 0)
+                        EEG.data(end+1,:) = trigchannel;
+                        EEG.chanlocs(end+1).labels = 'TRIGGER';
+                    end
+                end
                 
             else
                 % Data is continuous
@@ -612,7 +675,8 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
 
             end
             
-            EEG = eeg_checkset(EEG);
+            EEG.nbchan = size(EEG.data,1);]
+            [T, EEG] = evalc('eeg_checkset(EEG)');
             EEG.history = sprintf('%s\nEEG = eeg_checkset(EEG);', EEG.history);
 
         end
