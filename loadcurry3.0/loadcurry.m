@@ -27,6 +27,8 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
 %   Author for translating to EEGLAB: Matthew B. Pontifex, Health Behaviors and Cognition Laboratory, Michigan State University, February 17, 2021
 %   Github: https://github.com/mattpontifex/loadcurry
 %
+%   revision 3.1 - Integrate labels for epoched events.
+%
 %   revision 3.0 - Curry9 compatibility.
 %
 %   revision 2.1 - 
