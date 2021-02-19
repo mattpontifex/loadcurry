@@ -677,7 +677,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
 
             end
             
-            EEG.nbchan = size(EEG.data,1);]
+            EEG.nbchan = size(EEG.data,1);
             [T, EEG] = evalc('eeg_checkset(EEG)');
             EEG.history = sprintf('%s\nEEG = eeg_checkset(EEG);', EEG.history);
 
