@@ -27,7 +27,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
 %   Author for translating to EEGLAB: Matthew B. Pontifex, Health Behaviors and Cognition Laboratory, Michigan State University, February 17, 2021
 %   Github: https://github.com/mattpontifex/loadcurry
 %
-%   revision 3.1 - Integrate labels for epoched events.
+%   revision 3.1 - Rebuilt trigger module.
 %
 %   revision 3.0 - Curry9 compatibility.
 %
@@ -451,24 +451,6 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
 
             %% Created to take this data and place it into EEGLAB format (v13.4.4b)
             
-            currytime = double(linspace(fOffsetUsec/1000,fOffsetUsec/1000+(nSamples*nTrials-1)*1000/fFrequency,nSamples*nTrials));
-            
-            % Handle Epoched Datasets
-            if (nTrials > 1)
-                origdata = double(data);
-                newdata = NaN(nChannels, nSamples, nTrials);
-                startpoint = 1;
-                stoppoint = startpoint + nSamples - 1;
-                for cC = 1:nTrials
-                    newdata(:,:,cC) = data(:,startpoint:stoppoint);
-                    startpoint = startpoint + nSamples;
-                    stoppoint = startpoint + nSamples - 1;
-                end
-                data = newdata;
-                time = linspace(0,nSamples/fFrequency,nSamples);
-                time = time + (fOffsetUsec/1000000);
-            end
-            
             EEG.setname = 'Neuroscan Curry file';
             if (curryvers == 7)
                 datafileextension = '.dap';
@@ -478,15 +460,10 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             EEG.filename = [name, datafileextension];
             EEG.filepath = filepath;
             EEG.comments = sprintf('Original file: %s%s', filepath, [name, datafileextension]);
-            EEG.ref = 'Common';
-            EEG.trials = nTrials;
-            EEG.pnts = nSamples;
+            
             EEG.srate = fFrequency;
-            EEG.times = time;
-            EEG.data = double(data);
-            EEG.xmin = min(EEG.times);
-            EEG.xmax = (EEG.pnts-1)/EEG.srate+EEG.xmin;
-            EEG.nbchan = size(EEG.data,1);
+            
+            EEG.ref = 'Common';
             EEG.urchanlocs = [];
             EEG.chaninfo.plotrad = [];
             EEG.chaninfo.shrink = [];
@@ -500,7 +477,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                 EEG.chanlocs(cC).labels = char(upper(labels(cC))); % Convert labels to uppercase and store as character array string
                 EEG.chanlocs(cC).urchan = cC;
             end
-
+            
             if strcmpi(r.CurryLocations, 'True')
                 % Populate channel locations
                 % LPS sensor system:
@@ -564,224 +541,110 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                 booler = 1;
             end
             
+            % Manage Triggers
+            trigindx = find(strcmpi({EEG.chanlocs.labels},'Trigger'));
+            if isempty(trigindx)
+                % no trigger channel exists
+                 data(end+1,:) = zeros(1, size(data, 2));
+                 EEG.chanlocs(end+1).labels = 'TRIGGER';
+            else
+                % a trigger channel already exists
+                % Remove baseline from trigger channel
+                data(trigindx,:) = data(trigindx,:) - median(data(trigindx,:)); % should be unnecessary
+            end
+            EEG.nbchan = size(data,1);
+            EEG.pnts = size(data,2);
+            EEG.xmin = 0;
+            EEG.xmax = (EEG.pnts-1)/EEG.srate+EEG.xmin;
+            EEG.times = linspace(EEG.xmin,EEG.xmax,EEG.pnts);
+            EEG.trials = 1;
             
             % Handle Epoched Datasets
             if (nTrials > 1)
                 
-                [~, zeropoint] = min(abs(EEG.times));
-                EEG.data = origdata; % restore original data
-                EEG.trials = 1;
-                EEG.pnts = size(EEG.data,2);
-                EEG.xmin = 0;
-                EEG.xmax = (EEG.pnts-1)/EEG.srate+EEG.xmin;
-                EEG.times = linspace(EEG.xmin,EEG.xmax,EEG.pnts);
-                trigchannel = zeros(1, EEG.pnts);
-                
-                tempevent = struct('type', [], 'latency', [], 'urevent', [], 'label', []);
+                % find the zero point for the epoch
+                currytime = linspace(0,nSamples/fFrequency,nSamples);
+                currytime = currytime + (fOffsetUsec/1000000);
+                [~, zeropoint] = min(abs(currytime));
+            
+                trigindx = find(strcmpi({EEG.chanlocs.labels},'Trigger'));
                 startpoint = 1;
-                currentline = 1;
                 for cC = 1:nTrials
                     
                     % See if there are actual event information to add
                     if size(epochinformationlist,1) > 0
-                        
-                        tempevent(currentline).label = epochlabelslist{cC,1};
-                        tempevent(currentline).urevent = cC;
-                        tempevent(currentline).type = epochinformationlist(cC,3);
-                        tempevent(currentline).latency = double(startpoint+zeropoint-1);
-                        trigchannel(startpoint+zeropoint-1) = epochinformationlist(cC,3);
-                        
-                        currentline = currentline + 1;
-                    end
-                    
-                    if (cC < nTrials)
-                        % place boundary event at the end
-                        tempevent(currentline).type = 'boundary';
-                        tempevent(currentline).latency = double(startpoint+nSamples-1);
-
-                        currentline = currentline + 1;
-                    end
-                    startpoint = startpoint + nSamples;
-                end
-                
-                EEG.event = tempevent; 
-                EEG.urevent = struct('type', [], 'latency', []);
-                
-                % place triggers in channel
-                if (sum(trigchannel) > 0)
-                    if isempty(find(strcmpi({EEG.chanlocs.labels},'Trigger')))
-                        EEG.data(end+1,:) = trigchannel;
-                        EEG.chanlocs(end+1).labels = 'TRIGGER';
+                       data(trigindx, startpoint+zeropoint-1) = epochinformationlist(cC,3);
                     else
-                        % a trigger channel already exists likely
-                        % containing response or movement type events that
-                        % occurred during the epoch. 
-                        
-                        chanindex = find(strcmpi({EEG.chanlocs.labels},'Trigger'));
-                        % Remove baseline from trigger channel
-                        EEG.data(chanindex,:) = EEG.data(chanindex,:)-EEG.data(chanindex,1);
-
-                        tempun = find(trigchannel > 0); % find all new events
-                        for cC = 1:size(tempun,2) 
-                            if ~(EEG.data(chanindex, tempun(cC)) == trigchannel(tempun(cC)))
-                                % the marker is unique
-                                EEG.data(chanindex, tempun(cC)) = trigchannel(tempun(cC)); % store the new value
-                            end
-                        end
+                        % for some reason there is no event information
+                       data(trigindx, startpoint+zeropoint-1) = 10;
                     end
-                end
-            else
-                EEG.event = struct('type', [], 'latency', [], 'urevent', []);
-                EEG.urevent = struct('type', [], 'latency', []);
+                        
+                    % Place a boundary event
+                    data(trigindx, startpoint+nSamples-1) = -99;
+                        
+                    startpoint = startpoint + nSamples;
+                end % end trials
             end
-            
-            % Data should now be in continuous format
-            % previously epoched data will have events already loaded
-            % previously continuous data should have an empty event
-            % structure
             
             % Populate Event List
-            if ~isempty(events)
-                % Curry recorded events
-                if (size(EEG.event,2) == 1)
-                    currentline = 1;
-                else
-                    currentline = size(EEG.event,2) + 1;
-                end
+            % notice - the .cdt.ceo file contains events but
+            % the sample corresponding to the event seems to differ from
+            % what the trigger channel indicates
+            trigindx = find(strcmpi({EEG.chanlocs.labels},'Trigger'));
+            if (~isempty(events)) && (sum(abs(data(trigindx,:))) == 0)
+                % there is an event list but no trigger data 
+                % Highly concerning but go ahead and add events in
                 
+                % Add events to trigger channel
                 for cC = 1:size(events,2)
-                    % obtain the sampling point - verified against the
-                    % curry time points
-                    [~, tindx] = min(abs(currytime - double(events(1,cC))));
-                    
-                    % see if the event is already marked
-                    samppoint = find([EEG.event.latency] == tindx);
-                    boolcont = 1;
-                    if ~isempty(samppoint)
-                        if ~(EEG.event(samppoint).type == events(2,cC))
-                            % the events are different
-                            if (isempty(find([EEG.event.latency] == (tindx+1))))
-                                % move marker by 1 sample
-                                tindx = tindx + 1;
-                            elseif (isempty(find([EEG.event.latency] == (tindx-1))))
-                                % move marker back by 1 sample
-                                tindx = tindx - 1;
-                            elseif (isempty(find([EEG.event.latency] == (tindx+2))))
-                                % move marker by 2 samples
-                                tindx = tindx + 2;
-                            elseif (isempty(find([EEG.event.latency] == (tindx-2))))
-                                % move marker back by 2 samples
-                                tindx = tindx - 2;
-                            else
-                                tindx = tindx - 0.5; % half sample
-                            end
-                        else
-                            % sample has been marked already
-                            boolcont = 0;
-                        end
-                    end
-                    
-                    if (boolcont == 1)
-                        EEG.event(currentline).urevent = cC;
-                        EEG.event(currentline).type = events(2,cC);
-                        EEG.event(currentline).latency = double(tindx);
-                        currentline = currentline + 1;
-                    end
+                    data(trigindx, events(1,cC)) = events(2,cC);
                 end
-                [~,index] = sortrows([EEG.event.latency].'); EEG.event = EEG.event(index); clear index
             end
             
+            % Add events
+            EEG.event = struct('type', [], 'latency', [], 'urevent', []);
+            EEG.urevent = struct('type', [], 'latency', []);
             
-            % Event list should be populated either by the event list read
-            % in or by translating the epoch information
-            % Validate and Update the trigger channel if available
-            
-            % Determine if Trigger Channel is present
-            chanindex = find(strcmpi({EEG.chanlocs.labels},'Trigger'));
-            if ~isempty(chanindex)
-
-                % Remove baseline from trigger channel
-                EEG.data(chanindex,:) = EEG.data(chanindex,:)-EEG.data(chanindex,1);
-
-                % Populate list based on values above 0, triggers may last more than one sample
-                templat = find(EEG.data(chanindex,:) > 0);
-                templatrem = [];
-                for cC = 2:numel(templat)
-                    % If the sampling point is one off
-                    if ((templat(cC)-1) == templat(cC-1))
-                       templatrem(end+1) = templat(cC);
-                    end
+            % Populate list based on values different from 0, triggers may last more than one sample
+            templat = find(data(trigindx,:) ~= 0);
+            templatrem = [];
+            for cC = 2:numel(templat)
+                % If the sampling point is one off
+                if ((templat(cC)-1) == templat(cC-1))
+                   templatrem(end+1) = templat(cC);
                 end
-                templat = setdiff(templat,templatrem);
-                if ~isempty(templat)
-                    % Populate event list
-                    for cC = 1:numel(templat)
-                        tindx = double(templat(cC));
-                        % see if the event already exists
-                        samppoint = find([EEG.event.latency] == tindx);
-                        boolcont = 1;
-                        if ~isempty(samppoint)
-                            if ~(EEG.event(samppoint).type == EEG.data(chanindex,templat(cC)))
-                                % the events are different
-                                if (isempty(find([EEG.event.latency] == (tindx+1))))
-                                    % move marker by 1 sample
-                                    tindx = tindx + 1;
-                                elseif (isempty(find([EEG.event.latency] == (tindx-1))))
-                                    % move marker back by 1 sample
-                                    tindx = tindx - 1;
-                                elseif (isempty(find([EEG.event.latency] == (tindx+2))))
-                                    % move marker by 2 samples
-                                    tindx = tindx + 2;
-                                elseif (isempty(find([EEG.event.latency] == (tindx-2))))
-                                    % move marker back by 2 samples
-                                    tindx = tindx - 2;
-                                else
-                                    tindx = tindx - 0.5; % half sample
-                                end
-                            else
-                                % events is already marked
-                                boolcont = 0;
-                            end
-                        end
+            end
+            templat = setdiff(templat,templatrem);
+            if ~isempty(templat)
+                currentevent = 1;
+                for cC = 1:size(templat,2) 
+                    % store sample
+                    EEG.event(cC).latency = double(templat(cC));
+                    
+                    if (data(trigindx,templat(cC)) == -99)
+                        % boundary event
+                        EEG.event(cC).type = 'boundary';
+                        data(trigindx,templat(cC)) = 0; % remove boundary code
+                    else
+                        EEG.event(cC).type = data(trigindx,templat(cC));
+                        EEG.event(cC).urevent = currentevent;
                         
-                        if (boolcont == 1)
-                            try
-                                EEG.event(cC).urevent = cC;
-                                EEG.event(cC).type = EEG.data(chanindex,templat(cC));
-                                EEG.event(cC).latency = double(tindx);
-                            catch
-                                boolpass = 1;
-                            end
-                        end
+                        EEG.urevent(currentevent).type = data(trigindx,templat(cC));
+                        EEG.urevent(currentevent).latency = double(templat(cC));
+                        currentevent = currentevent + 1;
                     end
                 end
-                [~,index] = sortrows([EEG.event.latency].'); EEG.event = EEG.event(index); clear index
-                
-                % Reverse and make sure events are all in trigger channel
-                %try
-                    for cC = 1:size(EEG.event,2)
-                        % verify that it is not a boundary event
-                        if ~(strcmpi(EEG.event(cC).type,'boundary'))
-                            % verify that it is not a string type
-                            if ~(isstring(EEG.event(cC).type))
-                                samppoint = EEG.event(cC).latency;
-                                if ~(EEG.data(chanindex,samppoint) == EEG.event(cC).type)
-                                    % values are not equal
-                                    EEG.data(chanindex,samppoint) = EEG.event(cC).type;
-                                end
-                            end
-                        end
-                    end
-                %catch
-                    boolpass = 1;
-                %end
             end
+            
+            % Manage Data
+            EEG.data = double(data);
                 
             % Remove Trigger Channel
-            if ~isempty(find(strcmpi(labels,'Trigger')))
+            trigindx = find(strcmpi({EEG.chanlocs.labels},'Trigger'));
+            if ~isempty(trigindx)
                 if ~strcmpi(r.KeepTriggerChannel, 'True')
-                    EEG.data(find(strcmpi(labels,'TRIGGER')),:) = [];
-                    EEG.chanlocs(find(strcmpi(labels,'TRIGGER'))) = [];
+                    EEG.data(trigindx,:) = [];
+                    EEG.chanlocs(trigindx) = [];
                 end
             end
 
