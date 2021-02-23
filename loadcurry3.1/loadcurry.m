@@ -477,69 +477,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                 EEG.chanlocs(cC).labels = char(upper(labels(cC))); % Convert labels to uppercase and store as character array string
                 EEG.chanlocs(cC).urchan = cC;
             end
-            
-            if strcmpi(r.CurryLocations, 'True')
-                % Populate channel locations
-                % LPS sensor system:
-                % from right towards left, 
-                % from anterior towards posterior, 
-                % from inferior towards superior
 
-                % MATLAB/EEGLAB system:
-                % x is towards the nose, 
-                % y is towards the left ear, 
-                % z towards the vertex.
-
-                try, sensorpos; booler = 0; catch; booler = 1; end
-                if (booler == 0)
-                    for cC = 1:size(sensorpos,2)
-                       EEG.chanlocs(cC).Y = sensorpos(1,cC); 
-                       EEG.chanlocs(cC).X = sensorpos(2,cC)*-1; 
-                       EEG.chanlocs(cC).Z = sensorpos(3,cC); 
-                    end
-                    % Populate other systems based upon these values
-                    EEG.chanlocs = convertlocs( EEG.chanlocs, 'auto');
-                end
-                EEG.history = sprintf('%s\nEEG = loadcurry(''%s%s'', ''CurryLocations'', ''True'');', EEG.history, filepath, [name, datafileextension]); 
-            else
-                % Use default channel locations
-                try
-                    tempEEG = EEG; % for dipfitdefs
-                    dipfitdefs;
-                    tmpp = which('eeglab.m');
-                    tmpp = fullfile(fileparts(tmpp), 'functions', 'resources', 'Standard-10-5-Cap385_witheog.elp');
-                    userdatatmp = { template_models(1).chanfile template_models(2).chanfile  tmpp };
-                    try
-                        [T, tempEEG] = evalc('pop_chanedit(tempEEG, ''lookup'', userdatatmp{1})');
-                    catch
-                        try
-                            [T, tempEEG] = evalc('pop_chanedit(tempEEG, ''lookup'', userdatatmp{3})');
-                        catch
-                            booler = 1;
-                        end
-                    end
-                    EEG.chanlocs = tempEEG.chanlocs;
-                catch
-                    booler = 1;
-                end
-                EEG.history = sprintf('%s\nEEG = loadcurry(''%s%s'');', EEG.history, filepath, [name, datafileextension]);
-            end
-            
-            % Place impedance values within the chanlocs structure
-            try
-                if ~isempty(impedancematrix)
-                    if (size(impedancematrix,2) == size({EEG.chanlocs.labels},2)) % number of channels matches number of impedances
-                        impedancematrix(impedancematrix == -1) = NaN; % screen for missing values
-                        impedancelist = nanmedian(impedancematrix);
-                        for cC = 1:size({EEG.chanlocs.labels},2)
-                           EEG.chanlocs(cC).impedance = impedancematrix(1,cC)/1000; 
-                           EEG.chanlocs(cC).median_impedance = impedancelist(1,cC)/1000;
-                        end
-                    end
-                end
-            catch
-                booler = 1;
-            end
             
             % Manage Triggers
             trigindx = find(strcmpi({EEG.chanlocs.labels},'Trigger'));
@@ -585,19 +523,68 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                     startpoint = startpoint + nSamples;
                 end % end trials
             end
+            trigindx = find(strcmpi({EEG.chanlocs.labels},'Trigger'));
             
             % Populate Event List
-            % notice - the .cdt.ceo file contains events but
-            % the sample corresponding to the event seems to differ from
-            % what the trigger channel indicates
-            trigindx = find(strcmpi({EEG.chanlocs.labels},'Trigger'));
-            if (~isempty(events)) && (sum(abs(data(trigindx,:))) == 0)
-                % there is an event list but no trigger data 
-                % Highly concerning but go ahead and add events in
-                
-                % Add events to trigger channel
+            % For some amplifiers the .ceo file has event marks that are
+            % slightly out of alignment with the trigger channel
+            if (~isempty(events))
+                samplesoffby = 0;
+                if (sum(abs(data(trigindx,:))) > 0)
+                    try
+                        % try to adjust the event alignment with existing events
+                        eventpull = NaN(size(events,2),2);
+                        eventpull(:,1) = events(1,:);
+                        eventpull(:,2) = events(2,:);
+
+                        templat = find(data(trigindx,:) ~= 0);
+                        templatrem = [];
+                        for cC = 2:numel(templat)
+                            % If the sampling point is one off
+                            if ((templat(cC)-1) == templat(cC-1))
+                                if (data(trigindx,(templat(cC)-1)) == data(trigindx,(templat(cC))))
+                                    templatrem(end+1) = templat(cC);
+                                end
+                            end
+                        end
+                        templat = setdiff(templat,templatrem);
+                        triggerpull = NaN(size(templat,2),2);
+                        triggerpull(:,1) = templat(1,:);
+                        triggerpull(:,2) = data(trigindx,templat);
+
+                        commonstimcodes = intersect(eventpull(:,2),triggerpull(:,2));
+                        eventpull(~ismember(eventpull(:,2),commonstimcodes),:) = [];
+                        triggerpull(~ismember(triggerpull(:,2),commonstimcodes),:) = [];
+
+                        I = samplealign(eventpull, triggerpull);
+
+                        alignmatrixindices = NaN(size(I,1),5);
+                        for index = 1:size(I,1)
+                            alignmatrixindices(index,1) = eventpull(I(index),1);
+                            alignmatrixindices(index,2) = eventpull(I(index),2);
+                            alignmatrixindices(index,3) = triggerpull(index,1);
+                            alignmatrixindices(index,4) = triggerpull(index,2);
+                            if (alignmatrixindices(index,2) ~= alignmatrixindices(index,4))
+                                alignmatrixindices(index,5) = 0;
+                            else
+                                alignmatrixindices(index,5) = 1;
+                            end
+                        end
+                        alignmatrixindices(find(alignmatrixindices(:,5)==0),:) = [];
+                        tempvect = alignmatrixindices(:,3) - alignmatrixindices(:,1);
+                        samplesoffby = median(tempvect);
+                    catch
+                       booler = 1; 
+                    end
+                end
+
                 for cC = 1:size(events,2)
-                    data(trigindx, events(1,cC)) = events(2,cC);
+                    if (events(1,cC)+samplesoffby > 0) && (events(1,cC)+samplesoffby <= size(data,2)) 
+                        % add event to trigger channel if not already included
+                        if (data(trigindx, events(1,cC)+samplesoffby) ~= events(2,cC))
+                            data(trigindx, events(1,cC)+samplesoffby) = events(2,cC);
+                        end
+                    end
                 end
             end
             
@@ -611,7 +598,9 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             for cC = 2:numel(templat)
                 % If the sampling point is one off
                 if ((templat(cC)-1) == templat(cC-1))
-                   templatrem(end+1) = templat(cC);
+                    if (data(trigindx,(templat(cC)-1)) == data(trigindx,(templat(cC))))
+                        templatrem(end+1) = templat(cC);
+                    end
                 end
             end
             templat = setdiff(templat,templatrem);
@@ -647,8 +636,70 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                     EEG.chanlocs(trigindx) = [];
                 end
             end
-
             EEG.nbchan = size(EEG.data,1);
+            
+            if strcmpi(r.CurryLocations, 'True')
+                % Populate channel locations
+                % LPS sensor system:
+                % from right towards left, 
+                % from anterior towards posterior, 
+                % from inferior towards superior
+
+                % MATLAB/EEGLAB system:
+                % x is towards the nose, 
+                % y is towards the left ear, 
+                % z towards the vertex.
+
+                try, sensorpos; booler = 0; catch; booler = 1; end
+                if (booler == 0)
+                    for cC = 1:size(sensorpos,2)
+                       EEG.chanlocs(cC).Y = sensorpos(1,cC); 
+                       EEG.chanlocs(cC).X = sensorpos(2,cC)*-1; 
+                       EEG.chanlocs(cC).Z = sensorpos(3,cC); 
+                    end
+                    % Populate other systems based upon these values
+                    EEG.chanlocs = convertlocs( EEG.chanlocs, 'auto');
+                end
+            else
+                % Use default channel locations
+                try
+                    tempEEG = EEG; % for dipfitdefs
+                    dipfitdefs;
+                    tmpp = which('eeglab.m');
+                    tmpp = fullfile(fileparts(tmpp), 'functions', 'resources', 'Standard-10-5-Cap385_witheog.elp');
+                    userdatatmp = { template_models(1).chanfile template_models(2).chanfile  tmpp };
+                    try
+                        [T, tempEEG] = evalc('pop_chanedit(tempEEG, ''lookup'', userdatatmp{1})');
+                    catch
+                        try
+                            [T, tempEEG] = evalc('pop_chanedit(tempEEG, ''lookup'', userdatatmp{3})');
+                        catch
+                            booler = 1;
+                        end
+                    end
+                    EEG.chanlocs = tempEEG.chanlocs;
+                catch
+                    booler = 1;
+                end
+            end
+            
+            % Place impedance values within the chanlocs structure
+            try
+                if ~isempty(impedancematrix)
+                    impedancematrix(impedancematrix == -1) = NaN; % screen for missing values
+                    impedancelist = nanmedian(impedancematrix);
+                    for cC = 1:size({EEG.chanlocs.labels},2)
+                        chanindx = find(strcmpi(labels, EEG.chanlocs(cC).labels));
+                        if (~isempty(chanindx))
+                           EEG.chanlocs(cC).impedance = impedancematrix(1,chanindx)/1000; 
+                           EEG.chanlocs(cC).median_impedance = impedancelist(1,chanindx)/1000;
+                        end
+                    end
+                end
+            catch
+                booler = 1;
+            end
+            EEG.history = sprintf('%s\nEEG = loadcurry(''%s%s'', ''KeepTriggerChannel'', ''%s'', ''CurryLocations'', ''%s'');', EEG.history, filepath, [name, datafileextension], r.KeepTriggerChannel, r.CurryLocations); 
             [T, EEG] = evalc('eeg_checkset(EEG);');
             EEG.history = sprintf('%s\nEEG = eeg_checkset(EEG);', EEG.history);
 
