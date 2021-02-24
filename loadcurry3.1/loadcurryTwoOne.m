@@ -1,6 +1,6 @@
-function [EEG, command] = loadcurry(fullfilename, varargin)
-%   Import a Neuroscan Curry file into EEGLAB. Currently supports Curry version 6, 7, 8,
-%   and 9 data files (both continuous and epoched). Epoched
+function [EEG, command] = loadcurryTwoOne(fullfilename, varargin)
+%   Import a Neuroscan Curry file into EEGLAB. Currently supports Curry6,
+%   Curry7, and Curry8 data files (both continuous and epoched). Epoched
 %   datasets are loaded in as continuous files with boundary events. Data
 %   can be re-epoched using EEGLAB/ERPLAB functions.
 %
@@ -17,19 +17,10 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
 %       1     'CurryLocations' - Boolean parameter to determine if the sensor
 %               locations are carried forward from Curry [1, 'True'] or if the channel
 %               locations from EEGLAB should be used [0, 'False' Default].
-%       2     'KeepTriggerChannel' - Boolean parameter to determine if the trigger channel is retained in the array [1, 'True' Default] or if the trigger channel
-%               should be removed [0, 'False']. I debated adjusting this parameter but given the EEGLAB/ERPLAB
-%               bugs associated with trigger events, this provides a nice
-%               data check. You can always delete the channel or relocate
-%               it later.
 %
 %   Author for reading into Matlab: Neuroscan 
-%   Author for translating to EEGLAB: Matthew B. Pontifex, Health Behaviors and Cognition Laboratory, Michigan State University, February 17, 2021
-%   Github: https://github.com/mattpontifex/loadcurry
+%   Author for translating to EEGLAB: Matthew B. Pontifex, Health Behaviors and Cognition Laboratory, Michigan State University, August 26, 2015
 %
-%   revision 3.1 - Rebuilt trigger module.
-%
-%   revision 3.0 - Curry9 compatibility.
 %
 %   revision 2.1 - 
 %     Updated to make sure event latencies are in double format.
@@ -72,20 +63,12 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
              r=struct(varargin{:});
         end
         try, r.CurryLocations; catch, r.CurryLocations = 'False'; end
-        try, r.KeepTriggerChannel; catch, r.KeepTriggerChannel = 'True'; end
-        if strcmpi(r.CurryLocations, 'True') | (r.CurryLocations == 1)
+        try, r.Force; catch, r.Force = 'False'; end
+        try, r.AltFile; catch, r.AltFile = 'False'; end
+        if strcmpi(r.CurryLocations, 'True') | (r.CurryLocations == 0)
             r.CurryLocations = 'True';
-        else
-            r.CurryLocations = 'False';
         end
-        if strcmpi(r.KeepTriggerChannel, 'True') | (r.KeepTriggerChannel == 1)
-            r.KeepTriggerChannel = 'True';
-        else
-            r.KeepTriggerChannel = 'False';
-        end
-       
-        
-        
+
         EEG = [];
         EEG = eeg_emptyset;
         [pathstr,name,ext] = fileparts(fullfilename);
@@ -97,16 +80,10 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
         boolfiles = 1;
         curryvers = 0;
         if strcmpi(ext, '.cdt')
-            curryvers = 9;
-            if (exist([file '.cdt'], 'file') == 0) || ((exist([file '.cdt.dpa'], 'file') == 0) && (exist([file '.cdt.dpo'], 'file') == 0))
+            curryvers = 8;
+            if (exist([file '.cdt'], 'file') == 0) || (exist([file '.cdt.dpa'], 'file') == 0)
                 boolfiles = 0;
-                
-                if (exist([file '.cdt'], 'file') == 0)
-                    error('Error in pop_loadcurry(): The requested filename "%s" in "%s" does not have a .cdt file created by Curry 8 and 9.', name, filepath)
-                end
-                if ((exist([file '.cdt.dpa'], 'file') == 0) && (exist([file '.cdt.dpo'], 'file') == 0))
-                    error('Error in pop_loadcurry(): The requested filename "%s" in "%s" does not have a .cdt.dpa/o file created by Curry 8 and 9.', name, filepath)
-                end
+                error('Error in pop_loadcurry(): The requested filename "%s" in "%s" does not have both file components (.cdt, .cdt.dpa) created by Curry 8.', name, filepath)
             end
         else
             curryvers = 7;
@@ -118,17 +95,14 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
 
         if (boolfiles == 1)
 
-            %% Provided by Neuroscan enclosed within Program Files Folder for Curry7 (likely to be included in Curry8/9)
-            % Received updated version on 2-5-2021 from Michael Wagner, Ph.D., Senior Scientist, Compumedics Germany GmbH, Heußweg 25, 20255 Hamburg, Germany
+            %% Provided by Neuroscan enclosed within Program Files Folder for Curry7 (likely to be included in Curry8)
+            % Received updated version on 6-19-2016 from Michael Wagner, Ph.D., Senior Scientist, Compumedics Germany GmbH, Heußweg 25, 20255 Hamburg, Germany
             % Modified to retain compatibility with earlier versions of Matlab and Older Computers by Pontifex
             
             if (curryvers == 7)
                 datafileextension = '.dap';
-            elseif (curryvers > 7)
+            elseif (curryvers == 8)
                 datafileextension = '.cdt.dpa';
-                if (exist([file '.cdt.dpo'], 'file') > 0)
-                    datafileextension = '.cdt.dpo';
-                end
             end
             
             % Open parameter file
@@ -136,7 +110,6 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             if (fid == -1)
                error('Error in loadcurry(): Unable to open file.') 
             end
-            
             try
                 cell = textscan(fid,'%s','whitespace','','endofline','§');
             catch
@@ -220,11 +193,8 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             % open file containing labels
             if (curryvers == 7)
                 datafileextension = '.rs3';
-            elseif (curryvers > 7)
+            elseif (curryvers == 8)
                 datafileextension = '.cdt.dpa';
-                if (exist([file '.cdt.dpo'], 'file') > 0)
-                    datafileextension = '.cdt.dpo';
-                end
             end
             
             fid = fopen([file, datafileextension],'rt');
@@ -276,26 +246,6 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                 end 
             end
 
-            %Search for Epoch Labels
-            tixstar = strfind(cont,'EPOCH_LABELS START_LIST');
-            tixstop = strfind(cont,'EPOCH_LABELS END_LIST');
-            epochlabelslist = []; 
-            if (~isempty(tixstar)) && (~isempty(tixstop))
-                text = cont(tixstar:tixstop-1);
-                tcell = textscan(text,'%s', 'delimiter','\n','whitespace','', 'headerlines', 1);
-                epochlabelslist = tcell{1,1};
-            end
-            %Search for Epoch Information
-            tixstar = strfind(cont,'EPOCH_INFORMATION START_LIST');
-            tixstop = strfind(cont,'EPOCH_INFORMATION END_LIST');
-            epochinformationlist = []; 
-            if (~isempty(tixstar)) && (~isempty(tixstop))
-                text = cont(tixstar:tixstop-1);
-                tcell = textscan(text,'%d%d%d%d%d%d%d', 'delimiter','\n','headerlines', 1);
-                epochinformationlist = cell2mat(tcell);
-            end
-            
-            
             % read sensor locations from rs3 file
             % initialize sensor locations
             sensorpos = zeros(3,0);
@@ -334,7 +284,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             if (curryvers == 7)
                 datafileextension = '.cef';
                 datafileextensionalt = '.ceo';
-            elseif (curryvers > 7)
+            elseif (curryvers == 8)
                 datafileextension = '.cdt.cef';
                 datafileextensionalt = '.cdt.ceo';
             end
@@ -410,7 +360,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             % read dat file
             if (curryvers == 7)
                 datafileextension = '.dat';
-            elseif (curryvers > 7)
+            elseif (curryvers == 8)
                 datafileextension = '.cdt';
             end
             
@@ -454,16 +404,21 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             EEG.setname = 'Neuroscan Curry file';
             if (curryvers == 7)
                 datafileextension = '.dap';
-            elseif (curryvers > 7)
+            elseif (curryvers == 8)
                 datafileextension = '.cdt';
             end
             EEG.filename = [name, datafileextension];
             EEG.filepath = filepath;
             EEG.comments = sprintf('Original file: %s%s', filepath, [name, datafileextension]);
-            
-            EEG.srate = fFrequency;
-            
             EEG.ref = 'Common';
+            EEG.trials = nTrials;
+            EEG.pnts = nSamples;
+            EEG.srate = fFrequency;
+            EEG.times = time;
+            EEG.data = double(data);
+            EEG.xmin = 0;
+            EEG.xmax = (EEG.pnts-1)/EEG.srate+EEG.xmin;
+            EEG.nbchan = size(EEG.data,1);
             EEG.urchanlocs = [];
             EEG.chaninfo.plotrad = [];
             EEG.chaninfo.shrink = [];
@@ -477,241 +432,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                 EEG.chanlocs(cC).labels = char(upper(labels(cC))); % Convert labels to uppercase and store as character array string
                 EEG.chanlocs(cC).urchan = cC;
             end
-            
-            % Manage Triggers
-            trigindx = find(strcmpi({EEG.chanlocs.labels},'Trigger'));
-            if isempty(trigindx)
-                % no trigger channel exists
-                 data(end+1,:) = zeros(1, size(data, 2));
-                 EEG.chanlocs(end+1).labels = 'TRIGGER';
-            else
-                % a trigger channel already exists
-                % Remove baseline from trigger channel
-                data(trigindx,:) = data(trigindx,:) - median(data(trigindx,:)); % should be unnecessary
-            end
-            trigindx = find(strcmpi({EEG.chanlocs.labels},'Trigger'));
-            EEG.nbchan = size(data,1);
-            EEG.pnts = size(data,2);
-            EEG.xmin = 0;
-            EEG.xmax = (EEG.pnts-1)/EEG.srate+EEG.xmin;
-            EEG.times = linspace(EEG.xmin,EEG.xmax,EEG.pnts);
-            EEG.trials = 1;
-            
-            % Handle Epoched Datasets
-            if (nTrials > 1)
-                
-                % find the zero point for the epoch
-                currytime = linspace(0,nSamples/fFrequency,nSamples);
-                currytime = currytime + (fOffsetUsec/1000000);
-                [~, zeropoint] = min(abs(currytime));
-            
-                startpoint = 1;
-                for cC = 1:nTrials
-                    
-                    % See if there are actual event information to add
-                    if size(epochinformationlist,1) > 0
-                       data(trigindx, startpoint+zeropoint-1) = epochinformationlist(cC,3);
-                    else
-                        % for some reason there is no event information
-                       data(trigindx, startpoint+zeropoint-1) = 10;
-                    end
-                        
-                    % Place a boundary event
-                    data(trigindx, startpoint+nSamples-1) = -99;
-                        
-                    startpoint = startpoint + nSamples;
-                end % end trials
-            end
-            
-            % Populate Event List
-            
-            %  -- On data recorded from Grael Amplifiers, the event sample noted in the .ceo file differs from the event sample in the Trigger channel.
-            %  -- Clarification from Reyko Tech, Software Engineer at Compumedics, received Feb 24, 2021
-            %  The sample in the event file (ceo) is the time the TTL pulse happened in sync with the EEG data. 
-            %  The signal in the Grael trigger channel has a delay which depends on the sampling rate.
-            %  If you would measure a TTL pulse through the trigger channel and a bipolar input at the same time,
-            %  you will see that the trigger event from the ceo file sits where you see the TTL pulse in the bipolar channel.
-            %  The trigger channel shows the TTL pulse at a slightly different time. The Grael behaves differently
-            %  in this regards, than other Compumedics amplifiers.
-            %  The .ceo sample time should be viewed as the most accurate.
-            
-            %  For Grael V1 amplifiers, the event should precede the signal in the Trigger channel. 
-            %  For Grael V2 amplifiers the Trigger channel should precede the event.
-            
-            %  Here is an overview of the expected delays (time delay of the event in relation to signal in the Trigger channel):
-            %   Grael V1 at 2048 Hz: -20 ms
-            %   Grael V2 at 4096 Hz: +18.6 ms
-            %   Grael V2 at 2048 Hz: +29.8 ms
-            %   Grael V2 at 1024 Hz: +52.7 ms
-            %   Grael V2 at 512 Hz: +41.0 ms
-            %   Grael V2 at 256 Hz: +70.3 ms
-            %   Grael V2 at 128 Hz: +78.1 ms
-            
-            %  In all cases the .ceo sample time is the most correct.
-            
-            if (~isempty(events))
-                
-                samplesoffby = 0;
-                if (sum(abs(data(trigindx,:))) > 0)
-                    % There are events in the trigger channel that could need to be adjusted
-                    try
-                        % try to adjust the event alignment with existing events
-                        eventpull = NaN(size(events,2),2);
-                        eventpull(:,1) = events(1,:);
-                        eventpull(:,2) = events(2,:);
 
-                        templat = find(data(trigindx,:) ~= 0);
-                        templatrem = [];
-                        for cC = 2:numel(templat)
-                            % If the sampling point is one off
-                            if ((templat(cC)-1) == templat(cC-1))
-                                if (data(trigindx,(templat(cC)-1)) == data(trigindx,(templat(cC))))
-                                    templatrem(end+1) = templat(cC);
-                                end
-                            end
-                        end
-                        templat = setdiff(templat,templatrem);
-                        triggerpull = NaN(size(templat,2),2);
-                        triggerpull(:,1) = templat(1,:);
-                        triggerpull(:,2) = data(trigindx,templat);
-
-                        commonstimcodes = intersect(eventpull(:,2),triggerpull(:,2));
-                        eventpull(~ismember(eventpull(:,2),commonstimcodes),:) = [];
-                        triggerpull(~ismember(triggerpull(:,2),commonstimcodes),:) = [];
-                        
-                        try
-                            I = samplealign(eventpull, triggerpull);
-                        catch
-                            % find most frequenly occuring event and just  use that
-                            pullcounts = zeros(size(commonstimcodes,1),2);
-                            for cC = 1:size(commonstimcodes,1)
-                                pullcounts(cC,1) = numel(find(eventpull(:,2) == commonstimcodes(cC,1)));
-                                pullcounts(cC,2) = numel(find(triggerpull(:,2) == commonstimcodes(cC,1)));
-                            end
-                            pullcounts(:,3) = pullcounts(:,1)+pullcounts(:,2);
-                            [~, tindx] = max(pullcounts(:,3));
-                            commonstimcodes = commonstimcodes(tindx,1);
-                            eventpull(~ismember(eventpull(:,2),commonstimcodes),:) = [];
-                            triggerpull(~ismember(triggerpull(:,2),commonstimcodes),:) = [];
-                            I = samplealign(eventpull, triggerpull);
-                        end
-
-                        alignmatrixindices = NaN(size(I,1),5);
-                        for index = 1:size(I,1)
-                            alignmatrixindices(index,1) = eventpull(I(index),1);
-                            alignmatrixindices(index,2) = eventpull(I(index),2);
-                            alignmatrixindices(index,3) = triggerpull(index,1);
-                            alignmatrixindices(index,4) = triggerpull(index,2);
-                            if (alignmatrixindices(index,2) ~= alignmatrixindices(index,4))
-                                alignmatrixindices(index,5) = 0;
-                            else
-                                alignmatrixindices(index,5) = 1;
-                            end
-                        end
-                        alignmatrixindices(find(alignmatrixindices(:,5)==0),:) = [];
-                        tempvect = alignmatrixindices(:,3) - alignmatrixindices(:,1);
-                        samplesoffby = median(tempvect);
-                    catch
-                       booler = 1; 
-                       try
-                           % see if they generally align
-                           if (size(eventpull,1) == size(triggerpull,1))
-                               alignmatrixindices = NaN(size(eventpull,1),5);
-                               alignmatrixindices(:,1) = eventpull(:,1);
-                               alignmatrixindices(:,2) = eventpull(:,2);
-                               alignmatrixindices(:,3) = triggerpull(:,1);
-                               alignmatrixindices(:,4) = triggerpull(:,2);
-                               alignmatrixindices(:,5) = eventpull(:,2) - triggerpull(:,2);
-                               % same number of events and only when those events line up
-                               alignmatrixindices(find(alignmatrixindices(:,5)~=0),:) = [];
-                               tempvect = alignmatrixindices(:,3) - alignmatrixindices(:,1);
-                               samplesoffby = median(tempvect);
-                           end
-                       catch
-                         booler = 1; 
-                       end
-                       
-                    end
-                    
-                    if (samplesoffby ~= 0)
-                        % should only be possible for it to be off within a known range
-                        if (abs(samplesoffby) < 100) % just in case something wierd happens dont create a bigger headache
-
-                            % Shift the Trigger channel data
-                            if (samplesoffby < 0)
-                                % cut off the back of the trigger data
-                                ceoevents = horzcat(zeros(1,abs(samplesoffby)), data(trigindx,1:size(data,2)+samplesoffby));
-                                data(trigindx,:) = ceoevents(1,:);
-                            else
-                                % cut off the front of the trigger data
-                                ceoevents = horzcat(data(trigindx,1+samplesoffby:size(data,2)), zeros(1,abs(samplesoffby)));
-                                data(trigindx,:) = ceoevents(1,:);
-                            end
-                            
-                        end
-                    end
-                end
-
-                for cC = 1:size(events,2)
-                    if (events(1,cC) > 0) && (events(1,cC) <= size(data,2)) 
-                        % add event to trigger channel if not already included
-                        if (data(trigindx, events(1,cC)) ~= events(2,cC))
-                            data(trigindx, events(1,cC)) = events(2,cC);
-                        end
-                    end
-                end
-            end
-            
-            % Add events
-            EEG.event = struct('type', [], 'latency', [], 'urevent', []);
-            EEG.urevent = struct('type', [], 'latency', []);
-            
-            % Populate list based on values different from 0, triggers may last more than one sample
-            templat = find(data(trigindx,:) ~= 0);
-            templatrem = [];
-            for cC = 2:numel(templat)
-                % If the sampling point is one off
-                if ((templat(cC)-1) == templat(cC-1))
-                    if (data(trigindx,(templat(cC)-1)) == data(trigindx,(templat(cC))))
-                        templatrem(end+1) = templat(cC);
-                    end
-                end
-            end
-            templat = setdiff(templat,templatrem);
-            if ~isempty(templat)
-                currentevent = 1;
-                for cC = 1:size(templat,2) 
-                    % store sample
-                    EEG.event(cC).latency = double(templat(cC));
-                    
-                    if (data(trigindx,templat(cC)) == -99)
-                        % boundary event
-                        EEG.event(cC).type = 'boundary';
-                        data(trigindx,templat(cC)) = 0; % remove boundary code
-                    else
-                        EEG.event(cC).type = data(trigindx,templat(cC));
-                        EEG.event(cC).urevent = currentevent;
-                        
-                        EEG.urevent(currentevent).type = data(trigindx,templat(cC));
-                        EEG.urevent(currentevent).latency = double(templat(cC));
-                        currentevent = currentevent + 1;
-                    end
-                end
-            end
-            
-            % Manage Data
-            EEG.data = double(data);
-                
-            % Remove Trigger Channel
-            trigindx = find(strcmpi({EEG.chanlocs.labels},'Trigger'));
-            if ~isempty(trigindx)
-                if ~strcmpi(r.KeepTriggerChannel, 'True')
-                    EEG.data(trigindx,:) = [];
-                    EEG.chanlocs(trigindx) = [];
-                end
-            end
-            EEG.nbchan = size(EEG.data,1);
-            
             if strcmpi(r.CurryLocations, 'True')
                 % Populate channel locations
                 % LPS sensor system:
@@ -734,6 +455,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                     % Populate other systems based upon these values
                     EEG.chanlocs = convertlocs( EEG.chanlocs, 'auto');
                 end
+                EEG.history = sprintf('%s\nEEG = loadcurry(''%s%s'', ''CurryLocations'', ''True'');', EEG.history, filepath, [name, datafileextension]); 
             else
                 % Use default channel locations
                 try
@@ -755,28 +477,119 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                 catch
                     booler = 1;
                 end
+                EEG.history = sprintf('%s\nEEG = loadcurry(''%s%s'');', EEG.history, filepath, [name, datafileextension]);
             end
             
             % Place impedance values within the chanlocs structure
             try
                 if ~isempty(impedancematrix)
-                    impedancematrix(impedancematrix == -1) = NaN; % screen for missing values
-                    impedancelist = nanmedian(impedancematrix);
-                    for cC = 1:size({EEG.chanlocs.labels},2)
-                        chanindx = find(strcmpi(labels, EEG.chanlocs(cC).labels));
-                        if (~isempty(chanindx))
-                           EEG.chanlocs(cC).impedance = impedancematrix(1,chanindx)/1000; 
-                           EEG.chanlocs(cC).median_impedance = impedancelist(1,chanindx)/1000;
+                    if (size(impedancematrix,2) == size({EEG.chanlocs.labels},2)) % number of channels matches number of impedances
+                        impedancematrix(impedancematrix == -1) = NaN; % screen for missing values
+                        impedancelist = nanmedian(impedancematrix);
+                        for cC = 1:size({EEG.chanlocs.labels},2)
+                           EEG.chanlocs(cC).impedance = impedancematrix(1,cC)/1000; 
+                           EEG.chanlocs(cC).median_impedance = impedancelist(1,cC)/1000;
                         end
                     end
                 end
             catch
                 booler = 1;
             end
-            EEG.history = sprintf('%s\nEEG = loadcurry(''%s%s'', ''KeepTriggerChannel'', ''%s'', ''CurryLocations'', ''%s'');', EEG.history, filepath, [name, datafileextension], r.KeepTriggerChannel, r.CurryLocations); 
-            [T, EEG] = evalc('eeg_checkset(EEG);');
+            
+            % Populate Event List
+            if ~isempty(events)
+                EEG.event = struct('type', [], 'latency', [], 'urevent', []);
+                EEG.urevent = struct('type', [], 'latency', []);
+                for cC = 1:size(events,2)
+                    EEG.event(cC).urevent = cC;
+                    EEG.event(cC).type = events(2,cC);
+                    EEG.event(cC).latency = double(events(1,cC));
+                    EEG.urevent(cC).type = EEG.event(cC).type;
+                    EEG.urevent(cC).latency = double(EEG.event(cC).latency);
+                end
+            else
+                % Event list is empty
+                % Determine if Triggers are present
+                if ~isempty(find(strcmpi(labels,'Trigger')))
+
+                    % Remove baseline from trigger channel
+                    EEG.data(find(strcmpi(labels,'Trigger')),:) = EEG.data(find(strcmpi(labels,'Trigger')),:)-EEG.data(find(strcmpi(labels,'Trigger')),1); 
+
+                    % Populate list based on values above 0, triggers may last more than one sample
+                    templat = find(EEG.data(find(strcmpi(labels,'Trigger')),:)>0);
+                    templatrem = [];
+                    for cC = 2:numel(templat)
+                        % If the sampling point is one off
+                        if ((templat(cC)-1) == templat(cC-1))
+                           templatrem(end+1) = templat(cC);
+                        end
+                    end
+                    templat = setdiff(templat,templatrem);
+                    if ~isempty(templat)
+                        EEG.event = struct('type', [], 'latency', [], 'urevent', []);
+                        EEG.urevent = struct('type', [], 'latency', []);
+                        % Populate event list
+                        for cC = 1:numel(templat)
+                            try
+                                EEG.event(cC).urevent = cC;
+                                EEG.event(cC).type = EEG.data(find(strcmpi(labels,'Trigger')),templat(cC));
+                                EEG.urevent(cC).type = EEG.event(cC).type;
+                                EEG.event(cC).latency = double((templat(cC)-1));
+                                EEG.urevent(cC).latency = double(EEG.event(cC).latency);
+                            catch
+                                continue
+                            end
+                        end
+                    end
+                end
+            end
+            
+            % Remove Trigger Channel
+%             if ~isempty(find(strcmpi(labels,'Trigger')))
+%                 EEG.data(find(strcmpi(labels,'TRIGGER')),:) = [];
+%                 EEG.chanlocs(find(strcmpi(labels,'TRIGGER'))) = [];
+%             end
+            EEG.nbchan = size(EEG.data,1);
+
+            % Handle Epoched Datasets
+            if (nTrials > 1)
+                % Data has epochs
+                [T, EEG] = evalc('eeg_epoch2continuous(EEG)'); % Force to continous and add boundary events
+                
+            else
+                % Data is continuous
+            
+                % Check to See if Behavioral Data is Available
+                % Neurscan STIM2 Data is stored with the same file type as the  EEG data in Curry 6 & 7 which is problematic
+                % Check for PsychoPy .PSYDAT file
+                % 'Trial','Event','Duration','ISI','ITI','Type','Resp','Correct','Latency','ClockLatency','Trigger','MinRespWin','MaxRespWin','Stimulus'
+                AltFile = [file '.psydat'];
+%                 if ~strcmpi(r.AltFile, 'False')
+%                     AltFile = r.AltFile;
+%                 end
+%                 if ~(exist(AltFile, 'file') == 0) 
+% 
+%                     fid = fopen(AltFile,'rt');
+%                     if (fid ~= -1)
+%                         cell = textscan(fid,'%s');
+%                         fclose(fid);
+%                         cont = cell{1};
+% 
+%                         % Check file version
+%                         if strcmpi(cont(1,1),'gentask.....=') % Could be Neuroscan Stim2 or modified Psychopy formats
+%                             if strcmpi(cont(2,1),'PsychoPy_Engine_3')
+%                                 EEG = importengine3psychopy(EEG, AltFile, 'Force', r.Force);
+%                             end
+%                         end
+%                     end
+%                 end
+            end
+            
+            EEG = eeg_checkset(EEG);
             EEG.history = sprintf('%s\nEEG = eeg_checkset(EEG);', EEG.history);
 
         end
-    end   
+    end
+   
 end
+
