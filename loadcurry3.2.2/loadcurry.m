@@ -30,6 +30,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
 %   revision 3.1 - 
 %               .1 - Rebuilt trigger module in response to Grael bug.
 %               .2 - Updated Curry Channel Locations.
+%               .3 - Fixed time to be in milliseconds
 %
 %   revision 3.0 - Curry9 compatibility.
 %
@@ -528,9 +529,9 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
             trigindx = find(strcmpi({EEG.chanlocs.labels},'Trigger'));
             EEG.nbchan = size(data,1);
             EEG.pnts = size(data,2);
-            EEG.xmin = 0;
-            EEG.xmax = (EEG.pnts-1)/EEG.srate+EEG.xmin;
-            EEG.times = linspace(EEG.xmin,EEG.xmax,EEG.pnts);
+            EEG.xmin = 0; % (in seconds)
+            EEG.xmax = (EEG.pnts-1)/EEG.srate+EEG.xmin; % (in seconds)
+            EEG.times = double(linspace(EEG.xmin,EEG.xmax,EEG.pnts) * 1000); % times in miliseconds
             EEG.trials = 1;
             
             % Handle Epoched Datasets
