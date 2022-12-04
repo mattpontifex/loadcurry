@@ -85,7 +85,11 @@ end
 [pathName,fileName,extension] = fileparts(dataFile);
 
 if ( strcmpi ( extension,'.dat' ) )
-    baseName = [pathName,'\',fileName];
+    if ispc
+        baseName = [pathName,'\',fileName];
+    else
+        baseName = [pathName,'/',fileName];
+    end
     parameterFile = [baseName,'.dap'];
     labelFile = [baseName,'.rs3'];
     eventFile = [baseName,'.cef'];
