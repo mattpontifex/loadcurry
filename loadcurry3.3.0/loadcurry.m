@@ -406,6 +406,7 @@ function [EEG, command] = loadcurry(fullfilename, varargin)
                 % Add events
                 EEG.event = struct('type', [], 'latency', [], 'urevent', []);
                 EEG.urevent = struct('type', [], 'latency', []);
+                EEG.annotations = annotations;
 
                 % Populate list based on values different from 0, triggers may last more than one sample
                 templat = find(data(trigindx,:) ~= 0);
